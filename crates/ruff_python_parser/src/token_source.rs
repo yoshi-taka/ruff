@@ -22,7 +22,7 @@ pub(crate) struct TokenSource<'src> {
 impl<'src> TokenSource<'src> {
     /// Create a new token source for the given lexer.
     pub(crate) fn new(lexer: Lexer<'src>) -> Self {
-        // TODO(dhruvmanila): Use `allocate_tokens_vec`
+        // TODO(dhruvmanila): Use `allocate_tokens_capacity`
         TokenSource {
             lexer,
             tokens: vec![],
@@ -32,11 +32,17 @@ impl<'src> TokenSource<'src> {
     /// Create a new token source from the given source code which starts at the given offset.
     pub(crate) fn from_source(source: &'src str, mode: Mode, start_offset: TextSize) -> Self {
         let lexer = Lexer::new(source, mode, start_offset);
-        let mut source = TokenSource::new(lexer);
+        let mut token_source = TokenSource {
+            lexer,
+            // Pre-allocate based on source length to avoid repeated reallocations as tokens are
+            // pushed. See https://github.com/astral-sh/ruff/pull/9546 for the derivation of the
+            // lower bound.
+            tokens: Vec::with_capacity(allocate_tokens_capacity(source)),
+        };
 
         // Initialize the token source so that the current token is set correctly.
-        source.do_bump();
-        source
+        token_source.do_bump();
+        token_source
     }
 
     /// Returns the kind of the current token.
@@ -259,12 +265,9 @@ pub(crate) struct TokenSourceCheckpoint {
     tokens_position: usize,
 }
 
-/// Allocates a [`Vec`] with an approximated capacity to fit all tokens
-/// of `contents`.
+/// Returns a lower-bound capacity estimate for the token vector of `contents`.
 ///
 /// See [#9546](https://github.com/astral-sh/ruff/pull/9546) for a more detailed explanation.
-#[expect(dead_code)]
-fn allocate_tokens_vec(contents: &str) -> Vec<Token> {
-    let lower_bound = contents.len().saturating_mul(15) / 100;
-    Vec::with_capacity(lower_bound)
+fn allocate_tokens_capacity(contents: &str) -> usize {
+    contents.len().saturating_mul(15) / 100
 }
